@@ -52,7 +52,7 @@
 - 🧩 **多端协作软锁** — 同一实例多人操作时自动只读 + 申请接管，避免键鼠打架。
 - 🔒 **安全优先** — 面板为唯一入口，KasmVNC 凭据服务端注入、永不下发前端；docker.sock 仅管理员可触达。
 - 📱 **PWA** — iOS「添加到主屏幕」、桌面 Chrome「安装」当原生 App。
-- 🏗️ **多架构** — amd64 / arm64 预构建镜像（GHCR + GitHub Actions 自动发布）。
+- 🏗️ **多架构** — amd64 / arm64 预构建镜像（Docker Hub + GHCR，GitHub Actions 自动发布）。
 
 ---
 
@@ -73,7 +73,7 @@
 
 > 需已安装 Docker（含 Compose 插件）。x86_64 / arm64 均可。不熟悉 Docker？先读 [运行原理与 Docker 指南](doc/运行原理.md)。
 
-`docker-compose.yml` 引用的是 GHCR 上的镜像 `ghcr.io/gloridust/{woc-panel,wechat-on-cloud}`。
+`docker-compose.yml` 默认引用 **Docker Hub** 上的镜像 `docker.io/gloridust/{woc-panel,wechat-on-cloud}`（同时也发布到 GHCR 作为备用源）。
 **这两个镜像需先存在**——要么官方已发布（你能直接拉取），要么你在本地自行构建。二选一：
 
 **方式 A · 本地自构建（官方尚未发布镜像时用这个）**
@@ -83,32 +83,33 @@ git clone https://github.com/Gloridust/WechatOnCloud.git WechatOnCloud
 cd WechatOnCloud
 cp .env.example .env            # 至少改掉默认密码 WOC_PASSWORD
 ./scripts/build-local.sh        # 构建面板 + 微信实例镜像，打成 compose 用的同名标签
-docker compose up -d            # compose 默认优先用本地镜像，不会再去 GHCR
+docker compose up -d            # compose 默认优先用本地镜像，不会再去远端拉
 ```
 
-**方式 B · 拉取官方镜像（已发布到 GHCR 后）**
+**方式 B · 拉取官方镜像（推荐）**
 
 ```bash
 git clone https://github.com/Gloridust/WechatOnCloud.git WechatOnCloud
 cd WechatOnCloud
 cp .env.example .env            # 至少改掉默认密码 WOC_PASSWORD
-docker compose up -d            # 直接从 GHCR 拉取
+docker compose up -d            # 默认从 Docker Hub 拉取（公开、amd64/arm64 多架构）
 ```
 
-> 报错 `error from registry: denied`？说明 GHCR 上还没有该镜像（或包是私有的）。用方式 A 本地构建，或见 [发布到 GHCR](doc/发布到GHCR.md)。
+> **为什么默认 Docker Hub**：国内 / 国际通用、无需登录即可拉公开镜像，**飞牛 OS（fnOS）等 NAS 系统还内置了 Docker Hub 拉取加速**，通常比 GHCR 更快更稳。
 
-> **镜像源切换（国内 / NAS 加速，推荐）**：`docker-compose.yml` 默认拉 GHCR（`ghcr.io`），大陆网络常拉不动。官方镜像已同步发布到 **Docker Hub**（公开、amd64/arm64 多架构），在 `.env` 里改一行切过去即可：
+> **切换镜像源**：在 `.env` 改一行 `WOC_IMAGE_PREFIX`（改完 `docker compose pull && docker compose up -d`）：
 >
 > ```bash
-> WOC_IMAGE_PREFIX=docker.io/gloridust       # 改 .env 后：docker compose pull && docker compose up -d
+> WOC_IMAGE_PREFIX=ghcr.io/gloridust          # 备用：GitHub Container Registry
+> WOC_IMAGE_PREFIX=ghcr.nju.edu.cn/gloridust  # 备用：南京大学反代 ghcr.io（国内较稳）
 > ```
 >
-> **飞牛 OS（fnOS）等 NAS 系统内置了 Docker Hub 拉取加速**，用这个源通常比 GHCR 更快更稳，强烈推荐。其它可选源（南京大学反代 `ghcr.nju.edu.cn`、自建阿里云 ACR/腾讯 TCR 等）见 [.env.example](.env.example)。
+> 更多源（自建阿里云 ACR / 腾讯 TCR 等）见 [.env.example](.env.example)。报错 `denied`？说明该源上还没有镜像（或为私有），换个源或用方式 A 本地构建。
 
 无论哪种方式，都会拉起面板容器 `woc-panel`（唯一对外服务）。浏览器访问 `http://<NAS_IP>:36080`：
 
 1. 用 `.env` 里设置的管理员账号（默认 **admin / wechat**）登录面板；
-2. 管理员在面板「实例」页点「**新建微信实例**」，命名并选择哪些子账号可访问 → 面板自动 `docker run` 起一个微信实例容器（微信镜像本地没有时才会从 GHCR 拉取）；
+2. 管理员在面板「实例」页点「**新建微信实例**」，命名并选择哪些子账号可访问 → 面板自动 `docker run` 起一个微信实例容器（微信镜像本地没有时才会从镜像源拉取）；
 3. 进入该实例，点「**下载并安装**」微信（约 190~210MB，进度条实时显示，仅管理员可操作）；
 4. 装好后点「进入电脑版微信」→ 浏览器里出现微信窗口，手机扫码登录即可。
 
@@ -183,7 +184,7 @@ docker compose up -d            # 直接从 GHCR 拉取
 - [x] 自研面板：cookie 鉴权 + 反代 + 子账号管理 + PWA（KasmVNC 凭据不下发前端）
 - [x] 微信本体运行时下载到数据卷：面板一键「下载并安装 / 更新」，带进度条
 - [x] 多实例管理 + 按账号的实例访问权限（RBAC）
-- [x] 预构建多架构镜像发布到 GHCR + GitHub Actions 自动化
+- [x] 预构建多架构镜像发布到 Docker Hub / GHCR + GitHub Actions 自动化
 - [x] 中文输入修复 + 文本剪贴板中转 + 实例日志导出
 - [ ] 面板外层 TLS / 陌生设备验证码 / 审计日志
 - [x] 多端并发控制（操作控制权心跳软锁 + 只读遮罩 + 申请接管）
